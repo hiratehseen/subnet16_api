@@ -52,9 +52,9 @@ async def run_fastapi_with_ngrok(app):
 
 async def main():
     services = [
-        # MusicGenerationService(),
-        # TextToSpeechService(),
-        # VoiceCloningService(),
+        MusicGenerationService(),
+        TextToSpeechService(),
+        VoiceCloningService(),
     ]
 
     # Initialize an empty list to hold our tasks
@@ -62,7 +62,7 @@ async def main():
 
     # Iterate through each service and create an asynchronous task for its run_async method
     for service in services:
-        if isinstance(service, TextToSpeechService):
+        if isinstance(service):
             service.new_wandb_run()  # Initialize the Weights & Biases run if the service is TextToSpeechService
         task = asyncio.create_task(service.run_async())
         tasks.append(task)
@@ -70,17 +70,17 @@ async def main():
         await asyncio.sleep(0.1)  # Short delay between task initializations if needed
 
     # If the 'app' folder exists, create and run the FastAPI app
-    if os.path.exists(os.path.join(project_root, 'app')):
-        # Read secret key from environment variable
-        secret_key = os.getenv("LOGIN_SECRET_KEY")
-        if not secret_key:
-            raise ValueError("Login Secret key not found in environment variable LOGIN_SECRET_KEY")
-        app = create_app(secret_key)
-        # Create a task for running FastAPI with ngrok
-        fastapi_task = asyncio.create_task(run_fastapi_with_ngrok(app))
+    # if os.path.exists(os.path.join(project_root, 'app')):
+    #     # Read secret key from environment variable
+    #     secret_key = os.getenv("LOGIN_SECRET_KEY")
+    #     if not secret_key:
+    #         raise ValueError("Login Secret key not found in environment variable LOGIN_SECRET_KEY")
+    #     app = create_app(secret_key)
+    #     # Create a task for running FastAPI with ngrok
+    #     fastapi_task = asyncio.create_task(run_fastapi_with_ngrok(app))
 
-        # Wait for all tasks to complete, prioritizing the FastAPI task
-        await asyncio.gather(fastapi_task, *tasks)
+    #     # Wait for all tasks to complete, prioritizing the FastAPI task
+    #     await asyncio.gather(fastapi_task, *tasks)
     else:
         # If the 'app' folder does not exist, continue running other tasks normally
         await asyncio.gather(*tasks)
