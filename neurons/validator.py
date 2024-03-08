@@ -62,14 +62,14 @@ async def main():
 
     # Iterate through each service and create an asynchronous task for its run_async method
     for service in services:
-        if isinstance(service):
+        if isinstance(service, TextToSpeechService):
             service.new_wandb_run()  # Initialize the Weights & Biases run if the service is TextToSpeechService
         task = asyncio.create_task(service.run_async())
         tasks.append(task)
 
         await asyncio.sleep(0.1)  # Short delay between task initializations if needed
 
-    # If the 'app' folder exists, create and run the FastAPI app
+    # # If the 'app' folder exists, create and run the FastAPI app
     # if os.path.exists(os.path.join(project_root, 'app')):
     #     # Read secret key from environment variable
     #     secret_key = os.getenv("LOGIN_SECRET_KEY")
@@ -81,9 +81,9 @@ async def main():
 
     #     # Wait for all tasks to complete, prioritizing the FastAPI task
     #     await asyncio.gather(fastapi_task, *tasks)
-    else:
-        # If the 'app' folder does not exist, continue running other tasks normally
-        await asyncio.gather(*tasks)
+    # else:
+    #     # If the 'app' folder does not exist, continue running other tasks normally
+    #     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     asyncio.run(main())
