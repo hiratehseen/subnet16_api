@@ -1,10 +1,8 @@
-from fastapi import HTTPException , Depends
-import sys
-sys.path.append('../')
-from hashing import hash_password, verify_hash
 import re
 import os
-from models import Admin, SecretKey, AdminInfo
+from fastapi import HTTPException , Depends
+from app.hashing import hash_password, verify_hash
+from app.models import Admin, SecretKey, AdminInfo
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -12,8 +10,6 @@ from typing import Union, List
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from typing import Union, Optional
-import logging
-from sqlalchemy.ext.declarative import declarative_base
 from typing import Generator
 
 
