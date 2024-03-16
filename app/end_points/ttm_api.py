@@ -17,6 +17,7 @@ class TTM_API(MusicGenerationService):
         try:
             # Convert the metagraph's UIDs to a list
             uids = self.metagraph.uids.tolist()
+            
             emissions = self.metagraph.E
             bt.logging.debug(f"all the uids and emissions are in this list: {emissions}")
 
