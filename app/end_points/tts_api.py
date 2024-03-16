@@ -11,7 +11,6 @@ class TTS_API(TextToSpeechService):
         super().__init__()
         self.current_index = 0  # Initialize the current index
         self.filtered_axons = self._generate_filtered_axons_list()  # Generate the initial list
-        self.metagraph.E
 
     def _generate_filtered_axons_list(self):
         """Generate the list of filtered axons."""
@@ -29,7 +28,7 @@ class TTS_API(TextToSpeechService):
             bt.logging.debug(f"Queryable axons mask: {queryable_axons_mask}")
             
             # Filter the UIDs based on the queryable_axons_mask
-            filtered_uids = [uid for uid, queryable in zip(uids, queryable_axons_mask) if queryable.item()]
+            filtered_uids = [uid for uid, queryable in zip(uids, queryable_axons_mask, emissions) if queryable.item()]
 
             # Create a list of tuples (UID, Axon) for the filtered UIDs
             filtered_axons = [(uid, self.metagraph.neurons[uid].axon_info) for uid in filtered_uids]
