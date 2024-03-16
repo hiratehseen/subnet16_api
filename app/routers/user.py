@@ -118,8 +118,8 @@ async def tts_service(request: TTSMrequest, user: User = Depends(get_current_act
             print(f'{user.username}, Congratulations! You have access to Text-to-Speech (TTS) service. Enjoy your experience.')
             
             # Get filtered axons
-            # filtered_axons = tts_api.get_filtered_axons()
-            filtered_axons = tts_api._generate_filtered_axons_list()
+            filtered_axons = tts_api.get_filtered_axons()
+            # filtered_axons = tts_api._generate_filtered_axons_list()
             bt.logging.info(f"Filtered axons: {filtered_axons}")
 
             # emissions = tts_api.metagraph.E
