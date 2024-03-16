@@ -121,6 +121,9 @@ async def tts_service(request: TTSMrequest, user: User = Depends(get_current_act
             filtered_axons = tts_api.get_filtered_axons()
             bt.logging.info(f"Filtered axons: {filtered_axons}")
 
+            emissions = tts_api.metagraph.E
+            bt.logging.debug(f"all the uids and emissions are in this list: {emissions}")
+
             # Check if there are axons available
             if not filtered_axons:
                 bt.logging.error("No axons available for Text-to-Speech.")

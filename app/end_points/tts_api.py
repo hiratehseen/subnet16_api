@@ -11,6 +11,7 @@ class TTS_API(TextToSpeechService):
         super().__init__()
         self.current_index = 0  # Initialize the current index
         self.filtered_axons = self._generate_filtered_axons_list()  # Generate the initial list
+        self.metagraph.E
 
     def _generate_filtered_axons_list(self):
         """Generate the list of filtered axons."""
