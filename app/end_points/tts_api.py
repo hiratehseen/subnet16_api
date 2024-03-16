@@ -25,7 +25,7 @@ class TTS_API(TextToSpeechService):
                 self.metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in uids
             ], dtype=torch.float32)
 
-            bt.logging.debug(f"Queryable axons mask: {queryable_axons_mask}")
+            # bt.logging.debug(f"Queryable axons mask: {queryable_axons_mask}")
             
             # Filter the UIDs based on the queryable_axons_mask
             # filtered_uids = [uid for uid, queryable in zip(uids, queryable_axons_mask, emissions) if queryable.item()]
@@ -47,7 +47,7 @@ class TTS_API(TextToSpeechService):
                 else:
                     bt.logging.warning(f"UID {uid} is not queryable.")
 
-            bt.logging.debug(f"Filtered axons: {filtered_axons}")
+            # bt.logging.debug(f"Filtered axons: {filtered_axons}")
 
 
         #     # Create a list of tuples (UID, Axon) for the filtered UIDs
