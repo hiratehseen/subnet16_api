@@ -1,4 +1,4 @@
-# tts.py
+
 from classes.aimodel import AIModelService
 import os
 import bittensor as bt
@@ -11,12 +11,12 @@ import torchaudio
 # Import your module
 import lib.utils
 import lib
-import lib.protocol
 import traceback
 import pandas as pd
 import sys
 import wandb
 import datetime as dt
+import numpy as np
 # Set the project root path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # Set the 'AudioSubnet' directory path
@@ -30,7 +30,7 @@ class TextToSpeechService(AIModelService):
     def __init__(self):
         super().__init__()  # Initializes base class components
         self.load_prompts()
-        self.total_dendrites_per_query = 10
+        self.total_dendrites_per_query = 15
         self.minimum_dendrites_per_query = 3  # Example value, adjust as needed
         self.current_block = self.subtensor.block
         self.filtered_axon = []
@@ -41,31 +41,13 @@ class TextToSpeechService(AIModelService):
         self.tao = self.metagraph.neurons[self.uid].stake.tao
         self.combinations = []
         self.lock = asyncio.Lock()
+        self.response = None
         
-        ###################################### DIRECTORY STRUCTURE ###########################################
-        self.tts_source_dir = os.path.join(audio_subnet_path, "tts_source")
-        # Check if the directory exists
-        if not os.path.exists(self.tts_source_dir):
-            # If not, create the directory
-            os.makedirs(self.tts_source_dir)
-        self.tts_target_dir = os.path.join(audio_subnet_path, 'tts_target')
-        # Check if the directory exists
-        if not os.path.exists(self.tts_target_dir):
-            # If not, create the directory
-            os.makedirs(self.tts_target_dir)
-        ###################################### DIRECTORY STRUCTURE ###########################################
-
     def load_prompts(self):
         gs_dev = load_dataset("etechgrid/Prompts_for_Voice_cloning_and_TTS")
         self.prompts = gs_dev['train']['text']
         return self.prompts
         
-    def load_local_prompts(self):
-        if os.listdir(self.tts_source_dir):  
-            self.local_prompts = pd.read_csv(os.path.join(self.tts_source_dir, 'tts_prompts.csv'), header=None, index_col=False)
-            self.local_prompts = self.local_prompts[0].values.tolist()
-            bt.logging.info(f"Loaded prompts from {self.tts_source_dir}")
-            os.remove(os.path.join(self.tts_source_dir, 'tts_prompts.csv'))
         
     def check_and_update_wandb_run(self):
         # Calculate the time difference between now and the last run start time
@@ -108,7 +90,6 @@ class TextToSpeechService(AIModelService):
             self.check_and_update_wandb_run()
             try:
                 await self.main_loop_logic(step)
-                bt.logging.info(f"The Current step for TTS is ------------------------- : {step}")
                 step += 1
                 await asyncio.sleep(0.5)  # Adjust the sleep time as needed
                 if step % 50 == 0 and self.config.auto_update == 'yes':
@@ -139,10 +120,10 @@ class TextToSpeechService(AIModelService):
         while len(g_prompt) > 256:
             bt.logging.error(f'The length of current Prompt is greater than 256. Skipping current prompt.')
             g_prompt = random.choice(g_prompts)
-        if step % 4 == 0:
+        if step % 20 == 0:
             async with self.lock:
                 filtered_axons = self.get_filtered_axons_from_combinations()
-                bt.logging.info(f"--------------------------------- Prompt are being used from HuggingFace Dataset for TTS at Step: {step} ---------------------------------")
+                bt.logging.info(f"Prompt are being used from HuggingFace Dataset for TTS at Step: {step}")
                 bt.logging.info(f"______________Prompt______________: {g_prompt}")
                 responses = self.query_network(filtered_axons, g_prompt)
                 self.process_responses(filtered_axons, responses, g_prompt)
@@ -152,15 +133,15 @@ class TextToSpeechService(AIModelService):
                     self.last_reset_weights_block = self.current_block        
                     # set all nodes without ips set to 0
                     self.scores = self.scores * torch.Tensor([self.metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in self.metagraph.uids])
-    def query_network(self, axon, prompt):
+    def query_network(self,filtered_axons, prompt):
+        # Network querying logic
+        
         responses = self.dendrite.query(
-            axon,
+            filtered_axons,
             lib.protocol.TextToSpeech(text_input=prompt),
             deserialize=True,
-            timeout=60,
+            timeout=50,
         )
-        bt.logging.info(f"------------------------------------ prompt ------------------------------------ : {prompt}")
-        # bt.logging.debug(f"Responses: {responses}")
         return responses
     
     def update_block(self):
@@ -176,9 +157,10 @@ class TextToSpeechService(AIModelService):
             bt.logging.info(f"Next update will be at block: {self.last_updated_block + 100}")
             bt.logging.info(f"Skipping weight update. Last update was at block {self.last_updated_block}")
 
-    async def process_responses(self, filtered_axons, responses, prompt):  # mark as async
+    def process_responses(self,filtered_axons, responses, prompt):
         for axon, response in zip(filtered_axons, responses):
             if response is not None and isinstance(response, lib.protocol.TextToSpeech):
+                self.response = response
                 self.process_response(axon, response, prompt)
         
         bt.logging.info(f"Scores after update in TTS: {self.scores}")
@@ -186,52 +168,41 @@ class TextToSpeechService(AIModelService):
 
 
     def process_response(self, axon, response, prompt):
-        audio_file=None
         try:
+            speech_output = response.speech_output
             if response is not None and isinstance(response, lib.protocol.TextToSpeech) and response.speech_output is not None and response.dendrite.status_code == 200:
                 bt.logging.success(f"Received Text to speech output from {axon.hotkey}")
-                speech_output = response.speech_output
-                audio_file = self.handle_speech_output(axon, speech_output, prompt, response.model_name)
-                bt.logging.info(f"Scores after update in TTS: {self.scores}")
-            elif response is not None and response.dendrite.status_code != 403:
+                self.handle_speech_output(axon, speech_output, prompt, response.model_name)
+            elif response.dendrite.status_code != 403:
                 self.punish(axon, service="Text-To-Speech", punish_message=response.dendrite.status_message)
-                bt.logging.error(f"Received Text to speech output from {axon.hotkey} but it was not successful. Error: {response.dendrite.status_message}")
             else:
                 pass
-            return audio_file
         except Exception as e:
             bt.logging.error(f'An error occurred while handling speech output: {e}')
-
 
     def handle_speech_output(self, axon, speech_output, prompt, model_name):
         try:
             # Convert the list to a tensor
             speech_tensor = torch.Tensor(speech_output)
-            bt.logging.info(f"Speech output length: {len(speech_output)}")
             # Normalize the speech data
             audio_data = speech_tensor / torch.max(torch.abs(speech_tensor))
-            bt.logging.info(f"Audio data length: {len(audio_data)}")
 
             # Convert to 32-bit PCM
-            audio_data_int = (audio_data * 2147483647).type(torch.IntTensor)
-            bt.logging.info(f"Audio data length after conversion: {len(audio_data_int)}")
+            audio_data_int_ = (audio_data * 2147483647).type(torch.IntTensor)
 
             # Add an extra dimension to make it a 2D tensor
-            audio_data_int = audio_data_int.unsqueeze(0)
-            bt.logging.info(f"Audio data length after adding dimension: {len(audio_data_int)}")
+            audio_data_int = audio_data_int_.unsqueeze(0)
 
             # Save the audio data as a .wav file
             output_path = os.path.join('/tmp', f'output_{axon.hotkey}.wav')
-            bt.logging.info(f"Saving audio data to 2nd {output_path}")
             
-            # # Check if any WAV file with .wav extension exists and delete it
-            # existing_wav_files = [f for f in os.listdir('/tmp') if f.endswith('.wav')]
-            # bt.logging.info(f"Existing WAV files: {existing_wav_files}")
-            # for existing_file in existing_wav_files:
-            #     try:
-            #         os.remove(os.path.join('/tmp', existing_file))
-            #     except Exception as e:
-            #         bt.logging.error(f"Error deleting existing WAV file: {e}")
+            # Check if any WAV file with .wav extension exists and delete it
+            existing_wav_files = [f for f in os.listdir('/tmp') if f.endswith('.wav')]
+            for existing_file in existing_wav_files:
+                try:
+                    os.remove(os.path.join('/tmp', existing_file))
+                except Exception as e:
+                    bt.logging.error(f"Error deleting existing WAV file: {e}")
 
             # Save the audio file
             if model_name == "suno/bark":
@@ -241,15 +212,18 @@ class TextToSpeechService(AIModelService):
             else:
                 sampling_rate = 16000
             torchaudio.save(output_path, src=audio_data_int, sample_rate=sampling_rate)
-            bt.logging.info(f"Saved audio file to {output_path}")
             print(f"Saved audio file to {output_path}")
-
+            try:
+                uid_in_metagraph = self.metagraph.hotkeys.index(axon.hotkey)
+                wandb.log({f"Text to Speech prompt:{self.response.text_input} ": wandb.Audio(np.array(audio_data_int_), caption=f'For HotKey: {axon.hotkey[:10]} and uid {uid_in_metagraph}', sample_rate=sampling_rate)})
+                bt.logging.success(f"TTS Audio file uploaded to wandb successfully for Hotkey {axon.hotkey}")
+            except Exception as e:
+                bt.logging.error(f"Error uploading TTS audio to wandb for Hotkey {axon.hotkey}: {e}")
             # Score the output and update the weights
             score = self.score_output(output_path, prompt)
             bt.logging.info(f"Aggregated Score from the NISQA and WER Metric: {score}")
             self.update_score(axon, score, service="Text-To-Speech", ax=self.filtered_axon)
-            bt.logging.info(f"Scores after update in TTS: {self.scores}")
-            return output_path
+
         except Exception as e:
             bt.logging.error(f"Error processing speech output: {e}")
 
@@ -364,12 +338,15 @@ class TextToSpeechService(AIModelService):
                 netuid=self.config.netuid,  # Subnet to set weights on
                 wallet=self.wallet,         # Wallet to sign set weights using hotkey
                 uids=processed_uids,        # Uids of the miners to set weights for
-                weights=processed_weights   # Weights to set for the miners
+                weights=processed_weights, # Weights to set for the miners
+                wait_for_finalization=True,   
             )
 
             if result:
-                bt.logging.success('Successfully set weights.')
+                bt.logging.success(f'Successfully set weights. result: {result}')
+                bt.logging.info(f'META GRPAH: {self.metagraph.E.numpy()}')
             else:
                 bt.logging.error('Failed to set weights.')
         except Exception as e:
             bt.logging.error(f"An error occurred while setting weights: {e}")
+

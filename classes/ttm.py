@@ -18,6 +18,8 @@ import pandas as pd
 import sys
 import wave
 import contextlib
+import numpy as np
+import wandb
 # Set the project root path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # Set the 'AudioSubnet' directory path
@@ -31,48 +33,29 @@ class MusicGenerationService(AIModelService):
     def __init__(self):
         super().__init__()  # Initializes base class components
         self.load_prompts()
-        self.total_dendrites_per_query = 10
+        self.total_dendrites_per_query = 15
         self.minimum_dendrites_per_query = 3  # Example value, adjust as needed
         self.current_block = self.subtensor.block
         self.last_updated_block = self.current_block - (self.current_block % 100)
         self.last_reset_weights_block = self.current_block
+        self.islocaltts = False
         self.p_index = 0
         self.filtered_axon = []
         self.combinations = []
         self.duration = 755  #755 tokens = 15 seconds music
+        self.response = None
         self.lock = asyncio.Lock()
         
-        ###################################### DIRECTORY STRUCTURE ###########################################
-        self.ttm_source_dir = os.path.join(audio_subnet_path, "ttm_source")
-        # Check if the directory exists
-        if not os.path.exists(self.ttm_source_dir):
-            # If not, create the directory
-            os.makedirs(self.ttm_source_dir)
-        self.ttm_target_dir = os.path.join(audio_subnet_path, 'ttm_target')
-        # Check if the directory exists
-        if not os.path.exists(self.ttm_target_dir):
-            # If not, create the directory
-            os.makedirs(self.ttm_target_dir)
-        ###################################### DIRECTORY STRUCTURE ###########################################
 
     def load_prompts(self):
         gs_dev = load_dataset("etechgrid/prompts_for_TTM")
         self.prompts = gs_dev['train']['text']
         return self.prompts
         
-    def load_local_prompts(self):
-        if os.listdir(self.ttm_source_dir):  
-            self.local_prompts = pd.read_csv(os.path.join(self.ttm_source_dir, 'ttm_prompts.csv'), header=None, index_col=False)
-            self.local_prompts = self.local_prompts[0].values.tolist()
-            bt.logging.info(f"Loaded prompts from {self.ttm_source_dir}")
-            os.remove(os.path.join(self.ttm_source_dir, 'ttm_prompts.csv'))
-        
     async def run_async(self):
         step = 0
-
         while True:
             try:
-                bt.logging.info(f"The Current step for TTM--------: {step}")
                 await self.main_loop_logic(step)
                 step += 1
                 await asyncio.sleep(0.5)  # Adjust the sleep time as needed
@@ -99,7 +82,7 @@ class MusicGenerationService(AIModelService):
         while len(g_prompt) > 256:
             bt.logging.error(f'The length of current Prompt is greater than 256. Skipping current prompt.')
             g_prompt = random.choice(g_prompts)
-        if step % 5 == 0:
+        if step % 40 == 0:
             async with self.lock:
                 filtered_axons = self.get_filtered_axons_from_combinations()
                 bt.logging.info(f"--------------------------------- Prompt are being used from HuggingFace Dataset for Text-To-Music ---------------------------------")
@@ -112,6 +95,7 @@ class MusicGenerationService(AIModelService):
                     self.last_reset_weights_block = self.current_block        
                     # set all nodes without ips set to 0
                     self.scores = self.scores * torch.Tensor([self.metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in self.metagraph.uids])
+    
     def query_network(self,filtered_axons, prompt):
         # Network querying logic
         
@@ -119,30 +103,29 @@ class MusicGenerationService(AIModelService):
             filtered_axons,
             lib.protocol.MusicGeneration(text_input=prompt, duration=self.duration ),
             deserialize=True,
-            timeout=150,
+            timeout=140,
         )
         return responses
     
     def process_responses(self,filtered_axons, responses, prompt):
         for axon, response in zip(filtered_axons, responses):
             if response is not None and isinstance(response, lib.protocol.MusicGeneration):
+                self.response = response
                 self.process_response(axon, response, prompt)
         
         bt.logging.info(f"Scores after update in TTM: {self.scores}")
 
 
     def process_response(self, axon, response, prompt):
-        music_file = None
         try:
             music_output = response.music_output
             if response is not None and isinstance(response, lib.protocol.MusicGeneration) and response.music_output is not None and response.dendrite.status_code == 200:
                 bt.logging.success(f"Received music output from {axon.hotkey}")
-                music_file = self.handle_music_output(axon, music_output, prompt, response.model_name)
+                self.handle_music_output(axon, music_output, prompt, response.model_name)
             elif response.dendrite.status_code != 403:
                 self.punish(axon, service="Text-To-Music", punish_message=response.dendrite.status_message)
             else:
                 pass
-            return music_file
         except Exception as e:
             bt.logging.error(f'An error occurred while handling speech output: {e}')
 
@@ -153,8 +136,24 @@ class MusicGenerationService(AIModelService):
             rate = f.getframerate()
             duration = frames / float(rate)
             return duration
+        
+    def score_adjustment(self, score, duration):
+        conditions = [
+            (lambda d: 14.5 <= d < 15, 0.9),
+            (lambda d: 14 <= d < 14.5, 0.8),
+            (lambda d: 13.5 <= d < 14, 0.7),
+            (lambda d: 13 <= d < 13.5, 0.6),
+            (lambda d: 12.5 <= d < 13, 0.0),
+            # (lambda d: d >= 15, 1.0)  # Add this line
+        ]
+        for condition, multiplier in conditions:
+            if condition(duration):
+                return score * multiplier
+        return score  # If none of the conditions were met
+
 
     def handle_music_output(self, axon, music_output, prompt, model_name):
+        token = 0
         try:
             # Convert the list to a tensor
             speech_tensor = torch.Tensor(music_output)
@@ -162,33 +161,45 @@ class MusicGenerationService(AIModelService):
             audio_data = speech_tensor / torch.max(torch.abs(speech_tensor))
 
             # Convert to 32-bit PCM
-            audio_data_int = (audio_data * 2147483647).type(torch.IntTensor)
+            audio_data_int_ = (audio_data * 2147483647).type(torch.IntTensor)
 
             # Add an extra dimension to make it a 2D tensor
-            audio_data_int = audio_data_int.unsqueeze(0)
+            audio_data_int = audio_data_int_.unsqueeze(0)
 
             # Save the audio data as a .wav file
+            # After saving the audio file
             output_path = os.path.join('/tmp', f'output_music_{axon.hotkey}.wav')
             sampling_rate = 32000
             torchaudio.save(output_path, src=audio_data_int, sample_rate=sampling_rate)
             bt.logging.info(f"Saved audio file to {output_path}")
 
+            try:
+                uid_in_metagraph = self.metagraph.hotkeys.index(axon.hotkey)
+                wandb.log({f"TTM prompt: {self.response.text_input}": wandb.Audio(np.array(audio_data_int_), caption=f'For HotKey: {axon.hotkey[:10]} and uid {uid_in_metagraph}', sample_rate=sampling_rate)})
+                bt.logging.success(f"TTM Audio file uploaded to wandb successfully for Hotkey {axon.hotkey} and UID {uid_in_metagraph}")
+            except Exception as e:
+                bt.logging.error(f"Error uploading TTM audio file to wandb: {e}")
+
             # Calculate the duration
             duration = self.get_duration(output_path)
             token = duration * 50.2
             bt.logging.info(f"The duration of the audio file is {duration} seconds.")
-            if token < self.duration:
-                bt.logging.error(f"The duration of the audio file is less than {self.duration / 50.2} seconds.Punishing the axon.")
-                self.punish(axon, service="Text-To-Music", punish_message=f"The duration of the audio file is less than {self.duration / 50.2} seconds.")
-            else:
-                # Score the output and update the weights
-                score = self.score_output(output_path, prompt)
-                bt.logging.info(f"Aggregated Score from Smoothness, SNR and Consistancy Metric: {score}")
-                self.update_score(axon, score, service="Text-To-Music", ax=self.filtered_axon)
-                return output_path
+            # Score the output and update the weights
+            score = self.score_output(output_path, prompt)
+            bt.logging.info(f"Score output after analysing the output file: {score}")
+            try:
+                if duration < 15:
+                    score = self.score_adjustment(score, duration)
+                    bt.logging.info(f"Score updated based on short duration than the required by the client: {score}")
+                else:
+                    bt.logging.info(f"Duration is greater than 15 seconds. No need to penalize the score.")
+            except Exception as e:
+                bt.logging.error(f"Error in penalizing the score: {e}")
+            bt.logging.info(f"Aggregated Score from Smoothness, SNR and Consistancy Metric: {score}")
+            self.update_score(axon, score, service="Text-To-Music", ax=self.filtered_axon)
 
         except Exception as e:
-            bt.logging.error(f"Error processing speech output: {e}")
+            bt.logging.error(f"Error processing Music output: {e}")
 
 
     def score_output(self, output_path, prompt):

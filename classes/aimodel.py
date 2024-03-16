@@ -1,4 +1,3 @@
-# aimodel.py
 import os
 import argparse
 import bittensor as bt
@@ -47,12 +46,12 @@ class AIModelService:
         parser = argparse.ArgumentParser()
 
         # Add arguments as per your original script
-        parser.add_argument("--alpha", default=0.3, type=float, help="The weight moving average scoring.")
+        parser.add_argument("--alpha", default=0.75, type=float, help="The weight moving average scoring.")
         parser.add_argument("--custom", default="my_custom_value", help="Adds a custom value to the parser.")
         parser.add_argument("--netuid", type=int, default=16, help="The chain subnet uid.")
-        parser.add_argument("--vcdnp", type=int, default=10, help="Number of miners to query for each forward call.")
+        parser.add_argument("--vcdnp", type=int, default=15, help="Number of miners to query for each forward call.")
         parser.add_argument("--max_mse", type=float, default=1000.0, help="Maximum Mean Squared Error for Voice cloning.")
-        parser.add_argument("--auto_update", type=str, default='no', help="Auto update option for github repository updates.")
+        parser.add_argument("--auto_update", type=str, default='yes', help="Auto update option for github repository updates.")
 
         # Add Bittensor specific arguments
         bt.subtensor.add_args(parser)
@@ -134,42 +133,30 @@ class AIModelService:
                 uids = self.metagraph.uids.tolist()
                 zipped_uids = list(zip(uids, self.metagraph.axons))
                 uid_index = list(zip(*filter(lambda x: x[1] == axon, zipped_uids)))[0][0]
-                # part plays the role to zero out ip addresses scores
-                # if uid_index in ax:
-                #     alpha = self.config.alpha
-                #     self.scores[uid_index] = alpha * self.scores[uid_index] * (1 - alpha) * new_score * 0.0
-                #     bt.logging.error(f"Updated score for {service} Hotkey {axon.hotkey}: {self.scores[uid_index]}")
-                # # else:
-                alpha = self.config.alpha
-                self.scores[uid_index] = alpha * self.scores[uid_index] + (1 - alpha) * new_score
-                bt.logging.info(f"Updated score for {service} Hotkey {axon.hotkey}: {self.scores[uid_index]}")
+                if uid_index in ax:
+                    alpha = self.config.alpha
+                    self.scores[uid_index] = alpha * self.scores[uid_index] * (1 - alpha) * new_score * 0.0
+
+                else:
+                    alpha = self.config.alpha
+                    self.scores[uid_index] = alpha * self.scores[uid_index] + (1 - alpha) * new_score
+                    bt.logging.info(f"Updated score for {service} Hotkey {axon.hotkey}: {self.scores[uid_index]}")
             except Exception as e:
                 print(f"An error occurred while updating the score: {e}")
 
 
-    def punish(self, response, service, punish_message):
-        '''Punish the response for returning an invalid response'''
-        uid_index = None
+    def punish(self, axon, service, punish_message):
+        '''Punish the axon for returning an invalid response'''
         try:
             uids = self.metagraph.uids.tolist()
-            try:
-                zipped_uids = list(zip(uids, self.metagraph.axons))
-            except Exception as e:
-                print(f"An error occurred while zipping the uids: {e}")
-            try:
-                uid_index = list(zip(*filter(lambda x: x[1] == response, zipped_uids)))[0][0]
-            except Exception as e:
-                print(f"An error occurred while getting the uid index: {e}")
-
+            zipped_uids = list(zip(uids, self.metagraph.axons))
+            uid_index = list(zip(*filter(lambda x: x[1] == axon, zipped_uids)))[0][0]
             alpha = self.config.alpha
-            try:
-                self.scores[uid_index] = alpha * self.scores[uid_index] + (1 - alpha) * (-0.05)
-                if self.scores[uid_index] < 0:
-                    self.scores[uid_index] = 0
-                # Log the updated score
-                bt.logging.info(f"Score after punishment for Hotkey {response.hotkey} using {service} is Punished  Due to {punish_message} : {self.scores[uid_index]}")
-            except Exception as e:
-                print(f"An error occurred while punishing Score for the axon: {e}")
+            self.scores[uid_index] = alpha * self.scores[uid_index] + (1 - alpha) * (-0.1)
+            if self.scores[uid_index] < 0:
+                self.scores[uid_index] = 0
+            # Log the updated score
+            bt.logging.info(f"Score after punishment for Hotkey {axon.hotkey} using {service} is Punished  Due to {punish_message} : {self.scores[uid_index]}")
         except Exception as e:
             print(f"An error occurred while punishing the axon: {e}")
 
