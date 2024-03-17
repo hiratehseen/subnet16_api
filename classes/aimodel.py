@@ -88,7 +88,7 @@ class AIModelService:
         axon_info = df.iloc[0]['AXON']
 
         result = [(uid, axon_info)]
-
+        bt.logging.info(f"Priorityyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy UIDs: {result}")
         return result
     
     def get_system_info(self):
