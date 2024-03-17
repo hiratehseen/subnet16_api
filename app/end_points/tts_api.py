@@ -35,6 +35,8 @@ class TTS_API(TextToSpeechService):
             filtered_uids = [uid for uid, queryable, emission in zip(uids, queryable_axons_mask, emissions) if queryable.item()]
             bt.logging.debug(f"Filtered UIDs: {filtered_uids}")
 
+            bt.logging.debug(f"Filtered UIDs zipped with emissions: {filtered_uids}")
+
             # Create a list of tuples (UID, Axon) for the filtered UIDs
             filtered_axons = []
             for uid, queryable in zip(filtered_uids, queryable_axons_mask):
