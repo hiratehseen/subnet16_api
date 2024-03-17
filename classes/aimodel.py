@@ -63,7 +63,7 @@ class AIModelService:
         config = bt.config(parser)
         return config
 
-    def priority_uids(self, metagraph=None):
+    def priority_uids(self, metagraph):
         hotkeys = metagraph.hotkeys  # List of hotkeys
         coldkeys = metagraph.coldkeys  # List of coldkeys
         UIDs = range(len(hotkeys))  # Assuming UID is the index of neurons
