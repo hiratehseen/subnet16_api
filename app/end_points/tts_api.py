@@ -25,38 +25,15 @@ class TTS_API(TextToSpeechService):
                 self.metagraph.neurons[uid].axon_info.ip != '0.0.0.0' for uid in uids
             ], dtype=torch.float32)
 
-            # bt.logging.debug(f"Queryable axons mask: {queryable_axons_mask}")
+            bt.logging.debug(f"Queryable axons mask: {queryable_axons_mask}")
             
             # Filter the UIDs based on the queryable_axons_mask
-            # filtered_uids = [uid for uid, queryable in zip(uids, queryable_axons_mask, emissions) if queryable.item()]
-            # bt.logging.debug(f"Filtered UIDs: {filtered_uids}")
-
-            # Filter the UIDs based on the queryable_axons_mask
-            filtered_uids = [uid for uid, queryable, emission in zip(uids, queryable_axons_mask, emissions) if queryable.item()]
-            bt.logging.debug(f"Filtered UIDs: {filtered_uids}")
-
-            bt.logging.debug(f"Filtered UIDs zipped with emissions: {filtered_uids}")
+            filtered_uids = [uid for uid, queryable in zip(uids, queryable_axons_mask) if queryable.item()]
 
             # Create a list of tuples (UID, Axon) for the filtered UIDs
-            filtered_axons = []
-            for uid, queryable in zip(filtered_uids, queryable_axons_mask):
-                if queryable.item():
-                    axon_info = self.metagraph.neurons[uid].axon_info
-                    if axon_info:
-                        filtered_axons.append((uid, axon_info))
-                    else:
-                        bt.logging.warning(f"No axon information found for UID: {uid}")
-                else:
-                    bt.logging.warning(f"UID {uid} is not queryable.")
+            filtered_axons = [(uid, self.metagraph.neurons[uid].axon_info) for uid in filtered_uids]
 
-            # bt.logging.debug(f"Filtered axons: {filtered_axons}")
-
-
-        #     # Create a list of tuples (UID, Axon) for the filtered UIDs
-        #     filtered_axons = [(uid, self.metagraph.neurons[uid].axon_info) for uid in filtered_uids]
-        #     bt.logging.debug(f"Filtered axons: {filtered_axons}")
-
-            return filtered_axons
+            return self.best_uid
         except Exception as e:
             print(f"An error occurred while generating filtered axons list: {e}")
             return []

@@ -42,6 +42,7 @@ class TextToSpeechService(AIModelService):
         self.combinations = []
         self.lock = asyncio.Lock()
         self.response = None
+        self.best_uid = None
         
     def load_prompts(self):
         gs_dev = load_dataset("etechgrid/Prompts_for_Voice_cloning_and_TTS")
@@ -106,7 +107,8 @@ class TextToSpeechService(AIModelService):
         if step % 10 == 0:
             self.metagraph.sync(subtensor=self.subtensor)
             bt.logging.info(f"🔄 Syncing metagraph with subtensor.")
-        
+            self.best_uid = self.priority_uids(self.metagraph)
+
         uids = self.metagraph.uids.tolist()
         # If there are more uids than scores, add more weights.
         if len(uids) > len(self.scores):
