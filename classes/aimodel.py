@@ -33,7 +33,7 @@ class AIModelService:
         self.setup_subtensor()
         self.setup_dendrite()
         self.setup_metagraph()
-        self.priority_uids()
+        self.priority_uids(self.metagraph)
         self.vcdnp = self.config.vcdnp
         self.max_mse = self.config.max_mse
         self.pt_file = hf_hub_download(repo_id="lukewys/laion_clap", filename="630k-best.pt")
