@@ -64,13 +64,14 @@ class AIModelService:
         return config
 
     def priority_uids(self, metagraph):
+        bt.logging.info(f"Just checking if the program entered the priority_uids function.")
         hotkeys = metagraph.hotkeys  # List of hotkeys
         coldkeys = metagraph.coldkeys  # List of coldkeys
         UIDs = range(len(hotkeys))  # Assuming UID is the index of neurons
         stakes = metagraph.S.numpy()  # Total stake
         emissions = metagraph.E.numpy()  # Emission
         axon = metagraph.axons
-
+        bt.logging.info(f"UIDssssssssssssssssssssssssssssssssssssssssssssssssssssss: {UIDs}")
         # Create a DataFrame from the metagraph data
         df = pd.DataFrame({
             "UID": UIDs,
